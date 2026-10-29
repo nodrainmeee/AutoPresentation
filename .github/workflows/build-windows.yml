@@ -1,0 +1,85 @@
+name: Compiler AutoPresentation (Windows)
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compiler:
+    name: Tests et compilation
+    runs-on: windows-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: python -m pip install -r requirements.txt
+
+      - name: Vérifier la présence des fichiers du projet
+        shell: pwsh
+        run: |
+          $fichiers = @("app.py","requirements.txt","AutoPresentation.spec","autopresentation/__init__.py","autopresentation/interface.py","autopresentation/style.py","autopresentation/plan.py","autopresentation/gemini.py","autopresentation/config.py","autopresentation/powerpoint.py","autopresentation/moteur.py","tests/test_plan.py","tests/test_gemini.py","tests/test_powerpoint.py","tests/test_moteur.py","tests/test_config.py")
+          $manquants = $fichiers | Where-Object { -not (Test-Path $_) }
+          if ($manquants) { Write-Error "Fichiers manquants : $($manquants -join ', ')"; exit 1 }
+          Write-Host "Tous les fichiers du projet sont présents."
+
+      - name: Exécuter les tests automatisés
+        run: python -m unittest discover -s tests -t . -v
+
+      - name: Vérifier que l'interface se charge
+        run: python -c "import autopresentation.interface; print('Interface importée sans erreur')"
+
+      - name: Compiler avec PyInstaller
+        run: python -m PyInstaller --noconfirm AutoPresentation.spec
+
+      - name: Vérifier que l'exécutable existe
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/AutoPresentation.exe")) {
+            Write-Error "ÉCHEC : dist/AutoPresentation.exe n'a pas été créé."
+            exit 1
+          }
+          $taille = [math]::Round((Get-Item "dist/AutoPresentation.exe").Length / 1MB, 1)
+          Write-Host "Exécutable créé : AutoPresentation.exe ($taille Mo)"
+          (Get-FileHash "dist/AutoPresentation.exe" -Algorithm SHA256).Hash | Out-File "dist/AutoPresentation.exe.sha256.txt" -Encoding ascii
+
+      - name: Publier l'artefact téléchargeable
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoPresentation-Windows
+          path: |
+            dist/AutoPresentation.exe
+            dist/AutoPresentation.exe.sha256.txt
+          if-no-files-found: error
+
+  publier-version:
+    name: Publier dans GitHub Releases (uniquement sur un tag vX.Y.Z)
+    needs: compiler
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Télécharger l'exécutable compilé
+        uses: actions/download-artifact@v4
+        with:
+          name: AutoPresentation-Windows
+          path: publication
+
+      - name: Créer la version
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            publication/AutoPresentation.exe
+            publication/AutoPresentation.exe.sha256.txt
