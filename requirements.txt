@@ -1,0 +1,3 @@
+# Dépendances d'AutoPrésentation (versions épinglées pour des compilations reproductibles)
+pywin32==308; sys_platform == "win32"   # pilotage de PowerPoint (automatisation COM)
+pyinstaller==6.10.0                     # création de l'exécutable Windows (utilisé par GitHub Actions)
