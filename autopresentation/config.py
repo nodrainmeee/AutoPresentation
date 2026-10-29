@@ -4,7 +4,7 @@ import json
 import os
 from typing import Optional
 
-from .gemini import MODELE_DEFAUT
+from .gemini import MODELE_DEFAUT, MODELES_OBSOLETES
 
 
 def dossier_config() -> str:
@@ -27,6 +27,8 @@ def charger(dossier: Optional[str] = None) -> dict:
                 reglages[nom] = lus[nom]
     except (OSError, ValueError, AttributeError):
         pass
+    if reglages["modele"].strip() in MODELES_OBSOLETES or not reglages["modele"].strip():
+        reglages["modele"] = MODELE_DEFAUT   # ancien nom de modèle arrêté par Google
     return reglages
 
 

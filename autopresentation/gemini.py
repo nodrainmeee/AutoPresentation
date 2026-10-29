@@ -5,13 +5,17 @@ dans aucun message d'erreur.
 """
 
 import json
+import re
 import socket
 import time
 import urllib.error
 import urllib.request
 from typing import Callable, Optional
 
-MODELE_DEFAUT = "gemini-2.5-flash"
+MODELE_DEFAUT = "gemini-flash-latest"   # alias Google : toujours le dernier modèle Flash
+MODELES_OBSOLETES = {"gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash",
+                     "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-pro"}
+ADRESSE_LISTE = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200"
 ADRESSE = "https://generativelanguage.googleapis.com/v1beta/models/{modele}:generateContent"
 ATTENTES_429 = (15, 30)      # secondes avant chaque nouvel essai (limite de requêtes)
 ATTENTES_SERVEUR = (3, 6)    # secondes avant chaque nouvel essai (erreur 5xx)
@@ -59,6 +63,39 @@ def extraire_texte(reponse: dict) -> str:
     return texte
 
 
+_EXCLUS = ("tts", "image", "live", "audio", "embedding", "transcribe", "robotics", "vision",
+           "computer", "gemma", "imagen", "veo", "learnlm", "aqa")
+
+
+def choisir_modele(noms) -> Optional[str]:
+    """Choisit le meilleur modèle Flash parmi ceux que la clé peut utiliser."""
+    candidats = []
+    for nom in noms:
+        court = nom.split("/")[-1].lower()
+        if "flash" not in court or any(x in court for x in _EXCLUS):
+            continue
+        trouve = re.search(r"gemini-(\d+(?:\.\d+)?)", court)
+        version = float(trouve.group(1)) if trouve else 0.0
+        # préfère : stable avant preview/exp, standard avant lite, version la plus récente
+        rang = (("preview" in court or "exp" in court), ("lite" in court), -version, len(court))
+        candidats.append((rang, nom.split("/")[-1]))
+    return min(candidats)[1] if candidats else None
+
+
+def trouver_modele(cle: str, ouvrir: Callable = urllib.request.urlopen,
+                   delai_max: int = 30) -> Optional[str]:
+    """Demande à Google la liste des modèles disponibles pour cette clé (None si échec)."""
+    try:
+        requete = urllib.request.Request(ADRESSE_LISTE, headers={"x-goog-api-key": cle})
+        with ouvrir(requete, timeout=delai_max) as flux:
+            donnees = json.loads(flux.read().decode("utf-8"))
+        noms = [m.get("name", "") for m in donnees.get("models", [])
+                if "generateContent" in (m.get("supportedGenerationMethods") or [])]
+        return choisir_modele(noms)
+    except Exception:
+        return None
+
+
 def generer_json(cle: str, modele: str, consigne: str, *,
                  ouvrir: Callable = urllib.request.urlopen,
                  attendre: Callable[[float], None] = time.sleep,
@@ -73,17 +110,29 @@ def generer_json(cle: str, modele: str, consigne: str, *,
         "generationConfig": {"responseMimeType": "application/json",
                              "temperature": 0.7, "maxOutputTokens": 8192},
     }).encode("utf-8")
-    requete = urllib.request.Request(
-        ADRESSE.format(modele=modele), data=corps, method="POST",
-        headers={"Content-Type": "application/json", "x-goog-api-key": cle})
 
+    def fabriquer(nom_modele: str):
+        return urllib.request.Request(
+            ADRESSE.format(modele=nom_modele), data=corps, method="POST",
+            headers={"Content-Type": "application/json", "x-goog-api-key": cle})
+
+    requete = fabriquer(modele)
     essai = 0
+    liste_deja_demandee = False
     while True:
         try:
             with ouvrir(requete, timeout=delai_max) as flux:
                 reponse = json.loads(flux.read().decode("utf-8"))
             return extraire_texte(reponse)
         except urllib.error.HTTPError as exc:
+            if exc.code == 404 and not liste_deja_demandee:
+                liste_deja_demandee = True   # modèle introuvable : on cherche un modèle disponible
+                autre = trouver_modele(cle, ouvrir)
+                if autre and autre != modele:
+                    if sur_attente:
+                        sur_attente(f"Modèle « {modele} » introuvable, essai avec « {autre} »…")
+                    modele, requete = autre, fabriquer(autre)
+                    continue
             erreur = _erreur_http(exc.code, exc.read() if hasattr(exc, "read") else b"", modele)
             suites = ATTENTES_429 if exc.code == 429 else ATTENTES_SERVEUR if exc.code >= 500 else ()
             if essai < len(suites):

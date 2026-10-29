@@ -71,6 +71,34 @@ class TestGemini(unittest.TestCase):
             gemini.generer_json("k", "faux-modele", "x", ouvrir=ouvrir)
         self.assertIn("faux-modele", str(c.exception))
 
+    def test_modele_introuvable_choisit_un_autre(self):
+        vues, messages = [], []
+
+        def ouvrir(req, timeout):
+            vues.append(req.full_url)
+            if "/models?" in req.full_url:       # liste des modèles de la clé
+                return FauxFlux({"models": [
+                    {"name": "models/gemini-3.5-flash-lite", "supportedGenerationMethods": ["generateContent"]},
+                    {"name": "models/gemini-3.8-flash", "supportedGenerationMethods": ["generateContent"]},
+                    {"name": "models/gemini-3.8-flash-tts", "supportedGenerationMethods": ["generateContent"]},
+                    {"name": "models/embedding", "supportedGenerationMethods": ["embedContent"]}]})
+            if "ancien-modele" in req.full_url:
+                raise erreur_http(404)
+            return FauxFlux(reponse('{"ok": 1}'))
+
+        texte = gemini.generer_json("k", "ancien-modele", "x", ouvrir=ouvrir, sur_attente=messages.append)
+        self.assertEqual(texte, '{"ok": 1}')
+        self.assertIn("gemini-3.8-flash:generateContent", vues[-1])
+        self.assertTrue(any("introuvable" in m for m in messages))
+
+    def test_choisir_modele(self):
+        noms = ["models/gemini-3.5-flash-lite", "models/gemini-3.8-flash-preview",
+                "models/gemini-3.6-flash", "models/gemini-3.8-flash-tts", "models/gemini-3.8-pro",
+                "models/gemma-4-flash"]
+        self.assertEqual(gemini.choisir_modele(noms), "gemini-3.6-flash")   # stable avant preview
+        self.assertIsNone(gemini.choisir_modele(["models/gemini-3.8-pro"]))
+        self.assertEqual(gemini.choisir_modele(["models/gemini-3.5-flash-lite"]), "gemini-3.5-flash-lite")
+
     def test_429_reessaie_puis_reussit(self):
         appels, attentes, messages = [], [], []
 

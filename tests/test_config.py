@@ -19,6 +19,13 @@ class TestConfig(unittest.TestCase):
             r = config.charger(d)
         self.assertEqual((r["cle"], r["modele"], r["dossier_sortie"]), ("abc", "m", "é"))
 
+    def test_ancien_modele_remplace(self):
+        with tempfile.TemporaryDirectory() as d:
+            config.enregistrer({"cle": "abc", "modele": "gemini-2.5-flash", "dossier_sortie": ""}, d)
+            self.assertEqual(config.charger(d)["modele"], gemini.MODELE_DEFAUT)
+            config.enregistrer({"cle": "abc", "modele": "mon-modele", "dossier_sortie": ""}, d)
+            self.assertEqual(config.charger(d)["modele"], "mon-modele")
+
     def test_fichier_corrompu(self):
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, "reglages.json"), "w") as f:

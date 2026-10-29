@@ -49,7 +49,7 @@ Le bouton **Arrêter** interrompt la création (la présentation partielle reste
 ## 4. Limites à connaître
 - Windows + **PowerPoint de bureau** installé (la version web ne peut pas être pilotée).
 - Internet requis. La clé gratuite a des limites (requêtes par minute et par jour) qui peuvent changer ; une seule requête est utilisée par présentation, et le logiciel réessaie automatiquement si la limite est atteinte.
-- Si le nom du modèle Gemini change, modifiez-le dans les Paramètres.
+- Le modèle par défaut est `gemini-flash-latest` ; si un modèle est introuvable, le logiciel en choisit automatiquement un autre disponible pour votre clé.
 - Le contenu est généré par une IA : **relisez-le**, vérifiez les faits et les chiffres.
 - Le `.exe` n'est pas signé : Windows SmartScreen peut afficher un avertissement (**Informations complémentaires** → **Exécuter quand même**). Ne désactivez pas Windows Defender. L'empreinte SHA-256 est fournie (`AutoPresentation.exe.sha256.txt`) ; vérification : `Get-FileHash .\AutoPresentation.exe`.
 - **Testé automatiquement** : lecture du plan, appels Gemini simulés, construction PowerPoint simulée, gestion des erreurs. **Non testé automatiquement** : l'interface graphique et le pilotage réel de PowerPoint, qui ne se valident que sur un vrai Windows avec PowerPoint. Faites un premier essai (3 diapositives) et, en cas de problème, copiez le message affiché.
